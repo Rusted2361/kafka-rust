@@ -1,25 +1,29 @@
 #![allow(unused_imports)]
-use std::{io::{Cursor, Read, Seek, Write}, net::TcpListener};
+use bytes::{Buf, BufMut};
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+};
 
 fn main() {
     let listener = TcpListener::bind("127.0.0.1:9092").unwrap();
     
     for stream in listener.incoming() {
         match stream {
-            Ok(mut _stream) => {
-                println!("accepted new connection");
-                let mut buf = [0_u8; 4];
-                _stream.read_exact(buf.as_mut_slice()).unwrap();
-                let mut rdr = Cursor::new(buf);
-                let len = rdr.read_u32().await.unwrap();
-                let mut msg = vec![0u8; len.try_into().unwrap()];
-                _stream.read_exact(msg.as_mut_slice()).unwrap();
-                let mut rdr = Cursor::new(msg);
-                rdr.read_u16().await.unwrap(); // request_api_key
-                rdr.read_u16().await.unwrap(); // request_api_version
-                let correlation_id = rdr.read_u32().await.unwrap();
-                _stream.write_all([0, 0, 0, 4].as_slice()).unwrap();
-                _stream.write_all(&correlation_id.to_be_bytes()).unwrap();
+            Ok(mut stream) => {
+                let mut len = [0; 4];
+                stream.read_exact(&mut len).unwrap();
+                let len = i32::from_be_bytes(len) as usize;
+                let mut request = vec![0; len];
+                stream.read_exact(&mut request).unwrap();
+                let mut request = request.as_slice();
+                let _request_api_key = request.get_i16();
+                let _request_api_version = request.get_i16();
+                let correlation_id = request.get_i32();
+                let mut response = Vec::with_capacity(8);
+                response.put_i32(0);
+                response.put_i32(correlation_id);
+                stream.write_all(&response).unwrap();
             }
             Err(e) => {
                 println!("error: {}", e);
